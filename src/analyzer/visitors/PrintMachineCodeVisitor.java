@@ -82,7 +82,20 @@ public class PrintMachineCodeVisitor implements ParserVisitor {
 
         // TODO: Modify CODE to add the needed MachLine.
         //       here the type of Assignment is "assigned = left op right"
+        CODE.add(new MachLine(op, assign, left, right));
         return null;
+    }
+
+    public void printCode() {
+        int i = 0;
+        System.out.print("[");
+        for (MachLine code: CODE) {
+            String line = code.ASSIGN + " = " + code.LEFT + " " + code.OP + " " + code.RIGHT;
+            if (i++ != CODE.size() - 1)
+                line += ", ";
+            System.out.print(line);
+        }
+        System.out.println("]");
     }
 
     @Override
@@ -95,7 +108,7 @@ public class PrintMachineCodeVisitor implements ParserVisitor {
         // TODO: Modify CODE to add the needed MachLine.
         //       here the type of Assignment is "assigned = - right"
         //       suppose the left part to be the constant #O
-
+        CODE.add(new MachLine("-", assign, "#0", right));
         return null;
     }
 
@@ -109,6 +122,7 @@ public class PrintMachineCodeVisitor implements ParserVisitor {
         // TODO: Modify CODE to add the needed MachLine.
         //       here the type of Assignment is "assigned = right"
         //       suppose the left part to be the constant #O
+        CODE.add(new MachLine("+", assign, "#0", right));
         return null;
     }
 
@@ -216,10 +230,56 @@ public class PrintMachineCodeVisitor implements ParserVisitor {
 
     private void compute_LifeVar() {
         // TODO: Implement LifeVariable algorithm on the CODE array (for basic bloc)
+
+        for (MachLine line: CODE) {
+            line.Life_IN = new HashSet<>();
+            line.Life_OUT = new HashSet<>();
+        }
+
+        CODE.get(CODE.size() - 1).Life_OUT.addAll(RETURNED);
+
+        for (int i = CODE.size() - 1; i >= 0; i--) {
+            MachLine currLine = CODE.get(i);
+
+            if (i < CODE.size() - 1)
+                currLine.Life_OUT.addAll(CODE.get(i + 1).Life_IN);
+
+            currLine.Life_IN.addAll(currLine.REF);
+            HashSet<String> result = new HashSet<>(currLine.Life_OUT);
+            result.removeAll(currLine.DEF);
+            currLine.Life_IN.addAll(result);
+        }
+
+        for (MachLine line: CODE) {
+            line.Life_IN = new HashSet<>(set_ordered(line.Life_IN));
+            line.Life_OUT = new HashSet<>(set_ordered(line.Life_OUT));
+        }
     }
 
     private void compute_NextUse() {
         // TODO: Implement NextUse algorithm on the CODE array (for basic bloc)
+        for (MachLine line: CODE) {
+            line.Next_IN = new NextUse();
+            line.Next_OUT = new NextUse();
+        }
+
+        for (int i = CODE.size() - 1; i >= 0 ; i--) {
+            MachLine currLine = CODE.get(i);
+
+            if (i < CODE.size() - 1)
+                currLine.Next_OUT = new NextUse(CODE.get(i + 1).Next_IN.nextuse);
+
+            for (Map.Entry<String, ArrayList<Integer>> entry: currLine.Next_OUT.nextuse.entrySet()) {
+                String key = entry.getKey();
+
+                if (!currLine.DEF.contains(key)) {
+                    for (int value: entry.getValue())
+                        currLine.Next_IN.add(key, value);
+                }
+            }
+            for (String ref: currLine.REF)
+                currLine.Next_IN.add(ref, i);
+        }
     }
 
 
