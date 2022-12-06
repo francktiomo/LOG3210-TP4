@@ -244,15 +244,9 @@ public class PrintMachineCodeVisitor implements ParserVisitor {
             if (i < CODE.size() - 1)
                 currLine.Life_OUT.addAll(CODE.get(i + 1).Life_IN);
 
+            currLine.Life_IN.addAll(currLine.Life_OUT);
+            currLine.Life_IN.removeAll(currLine.DEF);
             currLine.Life_IN.addAll(currLine.REF);
-            HashSet<String> result = new HashSet<>(currLine.Life_OUT);
-            result.removeAll(currLine.DEF);
-            currLine.Life_IN.addAll(result);
-        }
-
-        for (MachLine line: CODE) {
-            line.Life_IN = new HashSet<>(set_ordered(line.Life_IN));
-            line.Life_OUT = new HashSet<>(set_ordered(line.Life_OUT));
         }
     }
 
@@ -267,7 +261,7 @@ public class PrintMachineCodeVisitor implements ParserVisitor {
             MachLine currLine = CODE.get(i);
 
             if (i < CODE.size() - 1)
-                currLine.Next_OUT = new NextUse(CODE.get(i + 1).Next_IN.nextuse);
+                currLine.Next_OUT =  (NextUse) CODE.get(i + 1).Next_IN.clone();
 
             for (Map.Entry<String, ArrayList<Integer>> entry: currLine.Next_OUT.nextuse.entrySet()) {
                 String key = entry.getKey();
@@ -292,25 +286,79 @@ public class PrintMachineCodeVisitor implements ParserVisitor {
         // /!\ TODO this function should generate the LD and ST when needed
 
         // TODO: if var is a constant (starts with '#'), return var
+        if (var.startsWith("#"))
+            return var;
 
         // TODO: if REGISTERS contains var, return "R"+index
+        if (REGISTERS.contains(var))
+            return "R" + REGISTERS.indexOf(var);
 
         // TODO: if REGISTERS size is not max (<REG), add var to REGISTERS and return "R"+index
+        if (REGISTERS.size() < REG) {
+            REGISTERS.add(var);
+            if (load_if_not_found) {
+                m_writer.println("LD " + "R" + (REGISTERS.size() - 1) + ", " + var);
+            }
+            return "R" + (REGISTERS.size() - 1);
+        } else {
+            // TODO: if REGISTERS has max size,
+            //  put var in space of an other variable which is not used anymore
+            //  or
+            //  put var in space of var which as the largest next-use
+            int farthestNextUseLine = -1;
+            String farthestNextUseVar = "";
 
-        // TODO: if REGISTERS has max size,
-        //          put var in space of an other variable which is not used anymore
-        //          or
-        //          put var in space of var which as the largest next-use
+            // Find the register to replace
+            for (String v : REGISTERS) {
+                if (!next.nextuse.containsKey(v)) {
+                    farthestNextUseVar = v;
+                    break;
+                }
+                if (next.nextuse.get(v).get(0) > farthestNextUseLine) {
+                    farthestNextUseLine = next.nextuse.get(v).get(0);
+                    farthestNextUseVar = v;
+                }
+            }
 
-        return null;
+            int idxElementToReplace = REGISTERS.indexOf(farthestNextUseVar);
+
+            // Use ST if modified and is in life in/out
+            if (MODIFIED.contains(farthestNextUseVar) && life.contains(farthestNextUseVar)) {
+                m_writer.println("ST " + farthestNextUseVar + ", R" + idxElementToReplace);
+            }
+
+            if (load_if_not_found) {
+                m_writer.println("LD " + "R" + idxElementToReplace + ", " + var);
+            }
+            REGISTERS.set(idxElementToReplace, var);
+
+            return "R" + (idxElementToReplace);
+        }
     }
 
     public void print_machineCode() {
         // TODO: Print the machine code (this function needs to be change)
+
         for (int i = 0; i < CODE.size(); i++) { // print the output
             m_writer.println("// Step " + i);
 
-            m_writer.println(CODE.get(i));
+            MachLine line = CODE.get(i);
+
+            String leftReg = choose_register(line.LEFT, line.Life_IN, line.Next_IN, true);
+            String rightReg = choose_register(line.RIGHT, line.Life_IN, line.Next_IN, true);
+            String assignReg = choose_register(line.ASSIGN, line.Life_OUT, line.Next_OUT, false);
+
+            MODIFIED.add(line.ASSIGN);
+
+            if (!(leftReg == "#0" && REG != 256))
+                m_writer.println(line.OP + " " + assignReg + ", " + leftReg + ", " + rightReg);
+            m_writer.println(line);
+        }
+
+        for (String ret: RETURNED) {
+            if (REGISTERS.contains(ret) && MODIFIED.contains(ret)) {
+                m_writer.println("ST " + ret + ", R" + REGISTERS.indexOf(ret));
+            }
         }
     }
 
